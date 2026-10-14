@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { appendEntry, listEntries, toCsv, type EntryRecord } from './entry-log';
+import type { Pass } from '../domain/pass';
+import { REASONS } from '../domain/verify';
+import { appendEntry, entryFromResult, listEntries, toCsv, type EntryRecord } from './entry-log';
 import { createMemoryStore } from './storage';
 
 const granted: EntryRecord = {
@@ -49,5 +51,49 @@ describe('toCsv', () => {
   it('neutralises spreadsheet formulas', () => {
     const csv = toCsv([{ ...denied, visitorAlias: '=HYPERLINK("x")' }]);
     expect(csv).toContain(`"'=HYPERLINK(""x"")"`);
+  });
+});
+
+describe('entryFromResult', () => {
+  const pass: Pass = {
+    v: 1,
+    id: 'p-42',
+    unit: 'Unit 07',
+    type: 'one-time',
+    validFrom: '2026-06-06T08:00:00.000Z',
+    validUntil: '2026-06-07T20:00:00.000Z',
+    visitorAlias: 'Aunt B',
+  };
+  const at = new Date('2026-06-06T12:00:00.000Z');
+
+  it('AC-1: maps a grant to a full entry with the time as ISO UTC', () => {
+    expect(entryFromResult({ result: 'granted', reason: REASONS.valid, pass }, at)).toEqual({
+      at: '2026-06-06T12:00:00.000Z',
+      result: 'granted',
+      reason: 'Pass is valid',
+      passId: 'p-42',
+      unit: 'Unit 07',
+      visitorAlias: 'Aunt B',
+    });
+  });
+
+  it.each([REASONS.blocked, REASONS.notYetValid, REASONS.expired, REASONS.alreadyUsed, REASONS.couldNotRecord])(
+    'AC-2: a denial with a valid signature (%s) keeps the pass fields',
+    (reason) => {
+      expect(entryFromResult({ result: 'denied', reason, pass }, at)).toEqual({
+        at: '2026-06-06T12:00:00.000Z',
+        result: 'denied',
+        reason,
+        passId: 'p-42',
+        unit: 'Unit 07',
+        visitorAlias: 'Aunt B',
+      });
+    },
+  );
+
+  it.each([REASONS.unreadable, REASONS.notAuthentic])('AC-3: a denial for "%s" has no pass fields', (reason) => {
+    const entry = entryFromResult({ result: 'denied', reason }, at);
+    expect(entry).toEqual({ at: '2026-06-06T12:00:00.000Z', result: 'denied', reason });
+    expect(Object.keys(entry)).toEqual(['at', 'result', 'reason']);
   });
 });
