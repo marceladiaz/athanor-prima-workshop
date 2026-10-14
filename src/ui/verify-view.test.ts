@@ -184,3 +184,22 @@ describe('renderVerifyView log entry (US-11)', () => {
     ]);
   });
 });
+
+describe('renderVerifyView with an unreadable ledger (review fix, D-12)', () => {
+  const corrupted = () => createMemoryStore({ [LEDGER_KEY]: 'not json' });
+
+  it('still grants a date-range pass and logs it', async () => {
+    const store = corrupted();
+    const text = (await render(await tokenFor(), store)).textContent ?? '';
+    expect(text).toContain('ACCESS GRANTED');
+    expect(listEntries(store)).toHaveLength(1);
+  });
+
+  it('denies a one-time pass with "Could not record pass use" and logs it', async () => {
+    const store = corrupted();
+    const text = (await render(await tokenFor({ type: 'one-time' }), store)).textContent ?? '';
+    expect(text).toContain('ACCESS DENIED');
+    expect(text).toContain('Could not record pass use');
+    expect(listEntries(store)).toMatchObject([{ result: 'denied', reason: 'Could not record pass use' }]);
+  });
+});

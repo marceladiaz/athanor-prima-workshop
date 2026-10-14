@@ -1,6 +1,7 @@
 // Verify screen (PG-3). Runs the verification policy and shows a full-screen result.
 // The caller reads the clock once and passes `now` in, so the screen stays testable.
 
+import type { Ledger } from '../domain/ledger';
 import { REASONS, verifyPass, type VerifyResult } from '../domain/verify';
 import { appendEntry, entryFromResult } from '../services/entry-log';
 import { markPassUsed, readLedger } from '../services/ledger';
@@ -15,10 +16,19 @@ export interface VerifyViewInput {
   readonly publicKey: CryptoKey;
 }
 
+/** An unreadable ledger counts as empty; recording a one-time pass then fails and denies it (D-12). */
+function safeReadLedger(store: KeyValueStore): Ledger {
+  try {
+    return readLedger(store);
+  } catch {
+    return {};
+  }
+}
+
 /** Runs the policy, then records a granted one-time pass as used (D-7). A failed write denies (D-12). */
 async function decide(input: VerifyViewInput): Promise<VerifyResult> {
   const { token, now, store, blocklist, publicKey } = input;
-  const outcome = await verifyPass(token, now, readLedger(store), blocklist, publicKey);
+  const outcome = await verifyPass(token, now, safeReadLedger(store), blocklist, publicKey);
   if (outcome.result !== 'granted' || outcome.pass?.type !== 'one-time') {
     return outcome;
   }
