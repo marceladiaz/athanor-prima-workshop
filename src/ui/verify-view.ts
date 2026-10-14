@@ -2,6 +2,7 @@
 // The caller reads the clock once and passes `now` in, so the screen stays testable.
 
 import { REASONS, verifyPass, type VerifyResult } from '../domain/verify';
+import { appendEntry, entryFromResult } from '../services/entry-log';
 import { markPassUsed, readLedger } from '../services/ledger';
 import type { KeyValueStore } from '../services/storage';
 import { el } from './dom';
@@ -50,6 +51,17 @@ function resultPanel(outcome: VerifyResult): HTMLElement {
   return panel;
 }
 
+/** Appends one entry per attempt (D-9). A failed write never changes the result on screen (D-12). */
+function logAttempt(store: KeyValueStore, outcome: VerifyResult, now: Date): void {
+  try {
+    appendEntry(store, entryFromResult(outcome, now));
+  } catch {
+    // Ignored on purpose: the guard still needs the result.
+  }
+}
+
 export async function renderVerifyView(root: HTMLElement, input: VerifyViewInput): Promise<void> {
-  root.replaceChildren(resultPanel(await decide(input)));
+  const outcome = await decide(input);
+  logAttempt(input.store, outcome, input.now);
+  root.replaceChildren(resultPanel(outcome));
 }

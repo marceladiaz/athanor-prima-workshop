@@ -1,5 +1,6 @@
 // Entry log kept in a KeyValueStore, with CSV export. Single device only.
 
+import type { VerifyResult } from '../domain/verify';
 import type { KeyValueStore } from './storage';
 
 export const ENTRIES_KEY = 'na.entries.v1';
@@ -18,6 +19,13 @@ const CSV_COLUMNS = ['at', 'result', 'reason', 'passId', 'unit', 'visitorAlias']
 export function listEntries(store: KeyValueStore): EntryRecord[] {
   const raw = store.getItem(ENTRIES_KEY);
   return raw === null ? [] : (JSON.parse(raw) as EntryRecord[]);
+}
+
+/** Builds the log entry for one attempt. Pass fields are kept only when the signature was valid (D-9). */
+export function entryFromResult(outcome: VerifyResult, at: Date): EntryRecord {
+  const entry: EntryRecord = { at: at.toISOString(), result: outcome.result, reason: outcome.reason };
+  const { pass } = outcome;
+  return pass ? { ...entry, passId: pass.id, unit: pass.unit, visitorAlias: pass.visitorAlias } : entry;
 }
 
 export function appendEntry(store: KeyValueStore, entry: EntryRecord): void {

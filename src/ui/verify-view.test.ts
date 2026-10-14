@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEMO_KEYS } from '../data/demo-keys';
 import type { Pass } from '../domain/pass';
+import { ENTRIES_KEY, listEntries } from '../services/entry-log';
 import { LEDGER_KEY } from '../services/ledger';
 import { importPrivateKey, importPublicKey, signPass } from '../services/signing';
 import { createMemoryStore, type KeyValueStore } from '../services/storage';
@@ -118,5 +119,68 @@ describe('renderVerifyView', () => {
     const text = (await render(null)).textContent ?? '';
     expect(text).toContain('ACCESS DENIED');
     expect(text).toContain('No valid pass in this link');
+  });
+});
+
+describe('renderVerifyView log entry (US-11)', () => {
+  function failingLogStore(): KeyValueStore {
+    const inner = createMemoryStore();
+    return {
+      getItem: (key) => inner.getItem(key),
+      setItem: (key, value) => {
+        if (key === ENTRIES_KEY) {
+          throw new Error('QuotaExceededError');
+        }
+        inner.setItem(key, value);
+      },
+    };
+  }
+
+  it('AC-4: appends exactly one entry per page load', async () => {
+    const store = createMemoryStore();
+    const token = await tokenFor();
+    await render(token, store);
+    expect(listEntries(store)).toEqual([
+      {
+        at: NOW.toISOString(),
+        result: 'granted',
+        reason: 'Pass is valid',
+        passId: basePass.id,
+        unit: 'Unit 07',
+        visitorAlias: 'Aunt B',
+      },
+    ]);
+    await render(token, store);
+    expect(listEntries(store)).toHaveLength(2);
+  });
+
+  it('AC-4: logs a denied attempt with no trusted fields when there is no token', async () => {
+    const store = createMemoryStore();
+    await render(null, store);
+    expect(listEntries(store)).toEqual([
+      { at: NOW.toISOString(), result: 'denied', reason: 'No valid pass in this link' },
+    ]);
+  });
+
+  it('AC-5: a failed log write does not change the screen', async () => {
+    const token = await tokenFor();
+    const ok = (await render(token)).innerHTML;
+    const failed = (await render(token, failingLogStore())).innerHTML;
+    expect(failed).toBe(ok);
+  });
+
+  it('AC-6: a failed ledger write is logged as "Could not record pass use" with the pass fields', async () => {
+    const store = failingLedgerStore();
+    await render(await tokenFor({ type: 'one-time' }), store);
+    expect(listEntries(store)).toEqual([
+      {
+        at: NOW.toISOString(),
+        result: 'denied',
+        reason: 'Could not record pass use',
+        passId: basePass.id,
+        unit: 'Unit 07',
+        visitorAlias: 'Aunt B',
+      },
+    ]);
   });
 });
